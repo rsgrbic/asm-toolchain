@@ -1,5 +1,5 @@
 #include "section.hpp"
-
+#include "assembler.hpp"
 Section::Section(const std::string& name, int ndx)
     : name(name), ndx(ndx), locationCounter(0) {}
 
@@ -38,4 +38,30 @@ void Section::addInstruction(uint32_t ins) {
     content.push_back((ins >> 16) & 0xFF); // RegA[3:0] | Mod[3:0]
     content.push_back((ins >> 24) & 0xFF); // OC[3:0] | ... 
     locationCounter += 4;
+}
+void Section::formInstruction(Opcode opcode, uint8_t mod, uint8_t regA, uint8_t regB, uint8_t regC, int16_t disp){
+     uint32_t ins = (static_cast<uint32_t>(opcode) << 28) |
+                   (static_cast<uint32_t>(mod)    << 24) |
+                   (static_cast<uint32_t>(regA)   << 20) |
+                   (static_cast<uint32_t>(regB)   << 16) |
+                   (static_cast<uint32_t>(regC)   << 12) |
+                   (disp & 0xFFF);
+    addInstruction(ins);
+}
+
+void Section::formInstructionWithLiteral(Opcode opcode, uint8_t mod,
+                                          uint8_t regA, uint8_t regB,
+                                          uint8_t regC, int32_t literal) {
+    if (Assembler::valueWithin12BitRange(literal)) {
+        formInstruction(opcode, mod, regA, regB, regC, static_cast<uint16_t>(literal & 0xFFF));
+    } else {
+        switch (opcode) {
+            case CALL: mod |= CALL_MEM_MOD; break;
+            case JMP:  mod |= JMP_MEM_MOD;  break;
+            case LOAD: case STORE: mod = LOAD_REGIND_MOD; break;
+            default: break;
+        }
+        addLiteralToPool(literal);
+        formInstruction(opcode, mod, regA, regB, regC, 0);
+    }
 }

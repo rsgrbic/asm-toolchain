@@ -47,7 +47,7 @@ void Assembler::insertLiteralPools(){
 
             for (int offset : pair.second) {
                 int disp = poolLocation - offset - 4;
-                section->changeDisplacementInInstruction(disp, offset);
+                section->changeDisplacementInInstruction(offset, disp);
             }
         }
     }

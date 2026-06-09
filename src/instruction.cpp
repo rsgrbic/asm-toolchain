@@ -1,51 +1,240 @@
 #include "./inc/parser.hpp"
 #include "./inc/assembler.hpp"
 #include "./inc/symbol_table.hpp"
-// #include <iostream>
+#include <iostream>
 
+static Section* sec() { return Assembler::getInstance().getCurrentSection(); }
 
-CodeComponent::~CodeComponent() =default;
+CodeComponent::~CodeComponent() = default;
 
+// === Dispatch ===
 void Instruction::process() {
-    if (type == INS_LD && operand.type == OP_IMMED && operand.sym == nullptr) {
-        // ld $0xFFFFFEFE, %sp  →  gprD <= literal
-        int literal = operand.num;
-        Assembler& asmbl = Assembler::getInstance();
-        Section* sec = asmbl.getCurrentSection();
-        //small literal
-        if (Assembler::valueWithin12BitRange(literal)) {
-            uint32_t ins = (0x9 << 28) | (0x1 << 24) | (regD << 20) | (0 << 16) | (0 << 12) | (literal & 0xFFF);
-            sec->addInstruction(ins);
-        } else {
-          //large literal
-            // LOAD MOD=2:  gpr[A] <= mem32[gpr[B] + gpr[C] + D]
-            // RegDest <= mem32[PC+ D(patched)]
-            sec->addLiteralToPool(literal);
-            uint32_t ins = (0x9 << 28) | (0x2 << 24) | (regD << 20) | (15 << 16) | (0 << 12) | 0;
-            sec->addInstruction(ins);
-          }
+    switch (type) {
+        case INS_HALT:  haltHandler();  break;
+        case INS_INT:   intHandler();   break;
+        case INS_IRET:  iretHandler();  break;
+        case INS_CALL:  callHandler();  break;
+        case INS_RET:   retHandler();   break;
+        case INS_JMP:   jmpHandler();   break;
+        case INS_BEQ:   beqHandler();   break;
+        case INS_BNE:   bneHandler();   break;
+        case INS_BGT:   bgtHandler();   break;
+        case INS_PUSH:  pushHandler();  break;
+        case INS_POP:   popHandler();   break;
+        case INS_XCHG:  xchgHandler();  break;
+        case INS_ADD:   addHandler();   break;
+        case INS_SUB:   subHandler();   break;
+        case INS_MUL:   mulHandler();   break;
+        case INS_DIV:   divHandler();   break;
+        case INS_NOT:   notHandler();   break;
+        case INS_AND:   andHandler();   break;
+        case INS_OR:    orHandler();    break;
+        case INS_XOR:   xorHandler();   break;
+        case INS_SHL:   shlHandler();   break;
+        case INS_SHR:   shrHandler();   break;
+        case INS_LD:    ldHandler();    break;
+        case INS_ST:    stHandler();    break;
+        case INS_CSRRD: csrrdHandler(); break;
+        case INS_CSRWR: csrwrHandler(); break;
     }
 }
 
-// void Directive::process(){
+void Instruction::haltHandler()  { sec()->formInstruction(HALT, 0, 0, 0, 0, 0); }
+void Instruction::intHandler()   { sec()->formInstruction(INT,  0, 0, 0, 0, 0); }
 
-//   switch(this->type){
-//     case DIR_GLOBAL: std::cout<< "Type: DIR GLOBAL "<< " SYMBOLS : " ;
-//           for (auto &elem : *syms){
-//             if (elem.type == SYM_SYM)
-//             std::cout << " " << elem.data.sym;
-//         else
-//             std::cout << " " << elem.data.num;
-//           }
-//           std::cout<<std::endl;
-//       break;
-//     case DIR_SECTION:
-//           std::cout<< "Type: DIR SECTION " << "Name: " <<this->sym<<std::endl;
-//           break;
-//   }
-// }
-
-void LabelComponent::process() {
-  addLabel(label);
+void Instruction::iretHandler() {
+    sec()->formInstruction(LOAD, LOAD_POP_MOD, PC, SP, 0, 4);
+    sec()->formInstruction(LOAD, LOAD_POP_MOD, 20, SP, 0, 4);// 20 scause
 }
 
+void Instruction::retHandler()   { sec()->formInstruction(LOAD, LOAD_POP_MOD, PC, SP, 0, 4); }
+
+//Jumps
+
+void Instruction::callHandler() {
+    if (operand.sym == nullptr)
+        sec()->formInstructionWithLiteral(CALL, CALL_REG_MOD, PC, 0, 0, operand.num);
+    else
+        ; // TODO: symbol relocation — formInstructionWithSymbol(CALL, CALL_REG_MOD, PC, 0, 0, operand.sym);
+}
+
+void Instruction::jmpHandler() {
+    if (operand.sym == nullptr)
+        sec()->formInstructionWithLiteral(JMP, JMP_REG_MOD, PC, 0, 0, operand.num);
+    else
+        ; // TODO: symbol
+        
+}
+
+void Instruction::beqHandler() {
+    if (operand.sym == nullptr)
+        sec()->formInstructionWithLiteral(JMP, JMP_BEQ_MOD, PC, regD, regS, operand.num);
+    else
+        ; // TODO: symbol
+}
+
+
+void Instruction::bneHandler() {
+    if (operand.sym == nullptr)
+        sec()->formInstructionWithLiteral(JMP, JMP_BNE_MOD, PC, regD, regS, operand.num);
+    else
+        ; // TODO: symbol
+}
+
+void Instruction::bgtHandler() {
+    if (operand.sym == nullptr)
+        sec()->formInstructionWithLiteral(JMP, JMP_BGT_MOD, PC, regD, regS, operand.num);
+    else
+        ; // TODO: symbol
+}
+
+//Stack ops
+
+void Instruction::pushHandler() {
+    sec()->formInstruction(STORE, STORE_PUSH_MOD, SP, SP, regS, -4);
+}
+
+void Instruction::popHandler() {
+    sec()->formInstruction(LOAD, LOAD_POP_MOD, regD, SP, 0, 4);
+}
+
+//arithmetic logic shift exchange
+
+void Instruction::xchgHandler() { sec()->formInstruction(XCHG, 0, 0, regS, regD, 0); }
+
+void Instruction::addHandler() { sec()->formInstruction(ARITM, ARITM_ADD_MOD, regD, regD, regS, 0); }
+void Instruction::subHandler() { sec()->formInstruction(ARITM, ARITM_SUB_MOD, regD, regD, regS, 0); }
+void Instruction::mulHandler() { sec()->formInstruction(ARITM, ARITM_MUL_MOD, regD, regD, regS, 0); }
+void Instruction::divHandler() { sec()->formInstruction(ARITM, ARITM_DIV_MOD, regD, regD, regS, 0); }
+
+void Instruction::notHandler() { sec()->formInstruction(LOGIC, LOGIC_NOT_MOD, regS, regS, 0, 0); }
+void Instruction::andHandler() { sec()->formInstruction(LOGIC, LOGIC_AND_MOD, regD, regD, regS, 0); }
+void Instruction::orHandler()  { sec()->formInstruction(LOGIC, LOGIC_OR_MOD,  regD, regD, regS, 0); }
+void Instruction::xorHandler() { sec()->formInstruction(LOGIC, LOGIC_XOR_MOD, regD, regD, regS, 0); }
+
+void Instruction::shlHandler() { sec()->formInstruction(SHIFT, SHIFT_SHL_MOD, regD, regD, regS, 0); }
+void Instruction::shrHandler() { sec()->formInstruction(SHIFT, SHIFT_SHR_MOD, regD, regD, regS, 0); }
+
+void Instruction::csrrdHandler() {
+    // regD = gpr dest, operand.reg = csr index (status=20, handler=21, cause=22)
+    sec()->formInstruction(LOAD, LOAD_CSRRD_MOD, regD, operand.reg, 0, 0);
+}
+
+void Instruction::csrwrHandler() {
+    // regS = gpr source, operand.reg = csr index
+    sec()->formInstruction(LOAD, LOAD_CSRWR_MOD, operand.reg, regS, 0, 0);
+}
+
+void Instruction::ldHandler() {
+    SymbolTable& sym = SymbolTable::getInstance();
+
+    switch (operand.type) {
+
+        case OP_IMMED:
+            if (operand.sym == nullptr) {
+              // ld $literal, %regD   →   regD <= PC + literal
+                int literal= operand.num;
+				if (Assembler::valueWithin12BitRange(literal)){
+					sec()->formInstruction(LOAD,LOAD_REGDIR_MOD,regD,0,0,static_cast<int16_t>(literal));
+				}
+				else{
+					// regD <= mem32[PC+pool_offset]
+					sec()->formInstruction(LOAD,LOAD_REGIND_MOD,regD,PC,0,0);
+				}
+              } else {
+                // ld $symbol, %regD    →   regD <= PC + symbol
+                // TODO: symbol relocation — formInstructionWithSymbol(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, operand.sym);
+            }
+            break;
+
+        case OP_MEM:
+            if (operand.sym == nullptr) {
+                // ld literal, %regD   →   regD <= mem32[literal]
+                int addr = operand.num;
+                if (Assembler::valueWithin12BitRange(addr)) {
+                    sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, 0, 0, static_cast<int16_t>(addr));
+                } else {
+					sec()->addLiteralToPool(addr);
+                    sec()->formInstruction(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, addr);
+                    sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, regD, 0, 0);
+                }
+            } else {
+                // ld symbol, %regD    →   regD <= mem32[symbol]
+                // TODO: symbol — load addr then indirect
+                // formInstructionWithSymbol(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, operand.sym);
+                // formInstruction(LOAD, LOAD_REGIND_MOD, regD, regD, 0, 0);
+            }
+            break;
+
+        case OP_REGDIR:
+            // ld %reg, %regD   →   regD <= reg
+            sec()->formInstruction(LOAD, LOAD_REGDIR_MOD, regD, operand.reg, 0, 0);
+            break;
+
+        case OP_REGIND:
+            // ld [%reg], %regD   →   regD <= mem32[reg]
+            sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, operand.reg, 0, 0);
+            break;
+
+        case OP_REGINDPOM:
+            if (operand.sym == nullptr) {
+                // ld [%reg + literal], %regD   →   regD <= mem32[reg + literal]
+                if (!Assembler::valueWithin12BitRange(operand.num)) {
+                    std::cerr << "Error: ld displacement too large for 12-bit range." << std::endl;
+                } else {
+                    sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, operand.reg, 0, static_cast<int16_t>(operand.num));
+                }
+            } else {
+                // ld [%reg + symbol], %regD   →   regD <= mem32[reg IMPOSSIBLE TO DO WITHOUT .equ
+            }
+            break;
+		}
+}
+
+
+void Instruction::stHandler() {
+    Section* s = sec();
+
+    switch (operand.type) {
+
+        case OP_IMMED:   // st %reg, $literal  /  st %reg, $symbol
+        case OP_REGDIR:  // st %reg, %rX
+            std::cerr << "Error: st cannot use immediate or register as destination." << std::endl;
+            break;
+
+        case OP_MEM:
+            if (operand.sym == nullptr) {
+                // st %regS, literal   →   mem32[literal] <= regS
+                int addr = operand.num;
+                if (Assembler::valueWithin12BitRange(addr)) {
+                    s->formInstruction(STORE, STORE_MEMDIR_MOD, 0, 0, regS, static_cast<int16_t>(addr));
+                } else {
+                    s->addLiteralToPool(addr);
+                    s->formInstruction(STORE, STORE_MEMIND_MOD, PC, 0, regS, 0);
+                }
+            }
+            // else: st %regS, symbol  →  TODO: symbol relocation
+            break;
+
+        case OP_REGIND:
+            // st %regS, [%rX]   →   mem32[rX] <= regS
+            s->formInstruction(STORE, STORE_MEMDIR_MOD, operand.reg, 0, regS, 0);
+            break;
+
+        case OP_REGINDPOM:
+            if (operand.sym == nullptr) {
+                // st %regS, [%rX + literal]   →   mem32[rX + literal] <= regS
+                if (!Assembler::valueWithin12BitRange(operand.num)) {
+                    std::cerr << "Error: st displacement too large for 12-bit range." << std::endl;
+                } else {
+                    s->formInstruction(STORE, STORE_MEMDIR_MOD, operand.reg, 0, regS, static_cast<int16_t>(operand.num));
+                }
+            }
+            // else: st %regS, [%rX + symbol]  →  not implemented (no .equ)
+            break;
+    }
+}
+
+void LabelComponent::process(){
+	addLabel(this->label);
+}

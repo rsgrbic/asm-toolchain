@@ -6,6 +6,9 @@
 #include <assembler.hpp>
 #include <symbol_table.hpp>
 
+#define PC 15
+#define SP 14
+
 enum SymbolType {
     SYM_SYM,
     SYM_LIT
@@ -89,6 +92,35 @@ public:
     int regD;
     void process();
     explicit Instruction(InstructionType t) : type(t), regS(-1), regD(-1) {}
+
+    private:
+    void haltHandler();
+    void intHandler();
+    void iretHandler();
+    void callHandler();
+    void retHandler();
+    void jmpHandler();
+    void beqHandler();
+    void bneHandler();
+    void bgtHandler();
+    void pushHandler();
+    void popHandler();
+    void xchgHandler();
+    void addHandler();
+    void subHandler();
+    void mulHandler();
+    void divHandler();
+    void notHandler();
+    void andHandler();
+    void orHandler();
+    void xorHandler();
+    void shlHandler();
+    void shrHandler();
+    void ldHandler();
+    void stHandler();
+    void csrrdHandler();
+    void csrwrHandler();
+
 };
 
 class Directive : public CodeComponent {
