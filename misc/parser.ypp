@@ -1,0 +1,186 @@
+%code requires {
+    #include <vector>
+    #include "./inc/parser.hpp"
+}
+
+
+%{
+    #include <cstdio>
+    #include <iostream>
+    #include "./inc/parser.hpp"
+
+    extern int yylex();
+    extern int yyparse();
+    extern void yylex_destroy();
+    extern FILE *yyin;
+    extern int lineNum;
+
+    void yyerror(std::vector<CodeComponent*>& components, const char* s);%}
+%union {
+    int reg;
+    int num;
+    char* sym;
+    char* label;
+    char* str;
+    std::vector<SymbolListElement>* symVec;
+    Operand operand;
+    Instruction* instruction;
+    Directive* directive;
+}
+%token PLUS
+%token DOLLAR
+%token LBRACKET
+%token RBRACKET
+%token COMMA
+%token COMMENT
+%token ENDL
+%token DIRECTIVE_GLOBAL
+%token DIRECTIVE_EXTERN
+%token DIRECTIVE_SECTION
+%token DIRECTIVE_WORD
+%token DIRECTIVE_SKIP
+%token DIRECTIVE_ASCII
+%token DIRECTIVE_END
+%token INSTRUCTION_HALT
+%token INSTRUCTION_INT
+%token INSTRUCTION_IRET
+%token INSTRUCTION_CALL
+%token INSTRUCTION_RET
+%token INSTRUCTION_JMP
+%token INSTRUCTION_BEQ
+%token INSTRUCTION_BNE
+%token INSTRUCTION_BGT
+%token INSTRUCTION_PUSH
+%token INSTRUCTION_POP
+%token INSTRUCTION_XCHG
+%token INSTRUCTION_ADD
+%token INSTRUCTION_SUB
+%token INSTRUCTION_MUL
+%token INSTRUCTION_DIV
+%token INSTRUCTION_NOT
+%token INSTRUCTION_AND
+%token INSTRUCTION_OR
+%token INSTRUCTION_XOR
+%token INSTRUCTION_SHL
+%token INSTRUCTION_SHR
+%token INSTRUCTION_LD
+%token INSTRUCTION_ST
+%token INSTRUCTION_CSRRD
+%token INSTRUCTION_CSRWR
+%token <reg> REG
+%token <reg> CSR
+%token <num> NUM
+%token <sym> SYM
+%token <str> STRING
+%token <label> LABEL
+%type <operand> operand_data
+%type <operand> operand_jmp
+%type <instruction> instruction
+%type <directive> directive
+%type <symVec> syms
+%parse-param {std::vector<CodeComponent*>& components}
+%%
+lines: lines line | line;
+line:
+      LABEL ENDL                                { components.push_back(new LabelComponent($1));                                 }
+    | LABEL instruction ENDL                    { $2->label = $1; components.push_back($2);                                      }
+    | LABEL directive ENDL                      { $2->label = $1; components.push_back($2);                                      }
+    | LABEL instruction COMMENT ENDL            { $2->label = $1; components.push_back($2);                                      }
+    | LABEL directive COMMENT ENDL              { $2->label = $1; components.push_back($2);                                      }
+    | LABEL COMMENT ENDL                        { components.push_back(new LabelComponent($1));                                  }
+    | instruction ENDL                          { components.push_back($1);                                                      }
+    | directive ENDL                            { components.push_back($1);                                                      }
+    | instruction COMMENT ENDL                  { components.push_back($1);                                                      }
+    | directive COMMENT ENDL                    { components.push_back($1);                                                      }
+    | COMMENT ENDL                              ;
+    | ENDL                                      ;
+    ;
+directive:
+      DIRECTIVE_GLOBAL syms                     { $$ = new Directive(DIR_GLOBAL); $$->syms = $2;                                              }
+    | DIRECTIVE_EXTERN syms                     { $$ = new Directive(DIR_EXTERN); $$->syms = $2;                                              }
+    | DIRECTIVE_SECTION SYM                     { $$ = new Directive(DIR_SECTION); $$->stringValue = $2;                                              }
+    | DIRECTIVE_WORD syms                       { $$ = new Directive(DIR_WORD); $$->syms = $2;                                                }
+    | DIRECTIVE_SKIP NUM                        { $$ = new Directive(DIR_SKIP); $$->num = $2;                                                  }
+    | DIRECTIVE_ASCII STRING                    { $$ = new Directive(DIR_ASCII); $$->stringValue = $2;                                                 }
+    | DIRECTIVE_END                             { $$ = new Directive(DIR_END);                                                                 }
+    ;
+instruction:
+      INSTRUCTION_HALT                          { $$ = new Instruction(INS_HALT);                                                              }
+    | INSTRUCTION_INT                           { $$ = new Instruction(INS_INT);                                                               }
+    | INSTRUCTION_IRET                          { $$ = new Instruction(INS_IRET);                                                              }
+    | INSTRUCTION_CALL operand_jmp              { $$ = new Instruction(INS_CALL); $$->operand = $2;                                            }
+    | INSTRUCTION_RET                           { $$ = new Instruction(INS_RET);                                                                }
+    | INSTRUCTION_JMP operand_jmp               { $$ = new Instruction(INS_JMP); $$->operand = $2;                                             }
+    | INSTRUCTION_BEQ REG COMMA REG COMMA operand_jmp
+                                                  { $$ = new Instruction(INS_BEQ); $$->regD = $2; $$->regS = $4; $$->operand = $6;            }
+    | INSTRUCTION_BNE REG COMMA REG COMMA operand_jmp
+                                                  { $$ = new Instruction(INS_BNE); $$->regD = $2; $$->regS = $4; $$->operand = $6;            }
+    | INSTRUCTION_BGT REG COMMA REG COMMA operand_jmp
+                                                  { $$ = new Instruction(INS_BGT); $$->regD = $2; $$->regS = $4; $$->operand = $6;            }
+    | INSTRUCTION_PUSH REG                      { $$ = new Instruction(INS_PUSH); $$->regS = $2;                                               }
+    | INSTRUCTION_POP REG                       { $$ = new Instruction(INS_POP); $$->regD = $2;                                                }
+    | INSTRUCTION_XCHG REG COMMA REG            { $$ = new Instruction(INS_XCHG); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_ADD REG COMMA REG             { $$ = new Instruction(INS_ADD); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_SUB REG COMMA REG             { $$ = new Instruction(INS_SUB); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_MUL REG COMMA REG             { $$ = new Instruction(INS_MUL); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_DIV REG COMMA REG             { $$ = new Instruction(INS_DIV); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_NOT REG                       { $$ = new Instruction(INS_NOT); $$->regS = $2;                                                }
+    | INSTRUCTION_AND REG COMMA REG             { $$ = new Instruction(INS_AND); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_OR REG COMMA REG              { $$ = new Instruction(INS_OR); $$->regS = $2; $$->regD = $4;                                 }
+    | INSTRUCTION_XOR REG COMMA REG             { $$ = new Instruction(INS_XOR); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_SHL REG COMMA REG             { $$ = new Instruction(INS_SHL); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_SHR REG COMMA REG             { $$ = new Instruction(INS_SHR); $$->regS = $2; $$->regD = $4;                                }
+    | INSTRUCTION_LD operand_data COMMA REG     { $$ = new Instruction(INS_LD); $$->operand = $2; $$->regD = $4;                              }
+    | INSTRUCTION_ST REG COMMA operand_data     { $$ = new Instruction(INS_ST); $$->regS = $2; $$->operand = $4;                              }
+    | INSTRUCTION_CSRRD CSR COMMA REG           { $$ = new Instruction(INS_CSRRD); $$->regD = $4; $$->operand.type = OP_REGDIR; $$->operand.reg = $2;  }
+    | INSTRUCTION_CSRWR REG COMMA CSR           { $$ = new Instruction(INS_CSRWR); $$->regS = $2; $$->operand.type = OP_REGDIR; $$->operand.reg = $4;  }
+    ;
+operand_data:
+      DOLLAR NUM                            { $$.type = OP_IMMED; $$.num = $2; $$.sym = nullptr;                    }
+    | DOLLAR SYM                            { $$.type = OP_IMMED; $$.sym = $2;                                      }
+    | NUM                                   { $$.type = OP_MEM; $$.num = $1; $$.sym = nullptr;                      }
+    | SYM                                   { $$.type = OP_MEM; $$.sym = $1;                                        }
+    | REG                                   { $$.type = OP_REGDIR; $$.reg = $1;                                     }
+    | LBRACKET REG RBRACKET                 { $$.type = OP_REGIND; $$.reg = $2;                                     }
+    | LBRACKET REG PLUS NUM RBRACKET        { $$.type = OP_REGINDPOM; $$.reg = $2; $$.num = $4; $$.sym = nullptr;   }
+    | LBRACKET REG PLUS SYM RBRACKET        { $$.type = OP_REGINDPOM; $$.reg = $2; $$.sym = $4;                     }
+    ;
+operand_jmp:
+      NUM                                   { $$.type = OP_IMMED; $$.num = $1; $$.sym = nullptr;                    }
+    | SYM                                   { $$.type = OP_IMMED; $$.sym = $1;                                      }
+    ;
+syms:
+      syms COMMA SYM {
+          SymbolListElement elem;
+          elem.type = SYM_SYM;
+          elem.data.sym = $3;
+          $$ = $1;
+          $$->push_back(elem);
+      }
+    | syms COMMA NUM {
+          SymbolListElement elem;
+          elem.type = SYM_LIT;
+          elem.data.num = $3;
+          $$ = $1;
+          $$->push_back(elem);
+      }
+    | SYM {
+          $$ = new std::vector<SymbolListElement>();
+          SymbolListElement elem;
+          elem.type = SYM_SYM;
+          elem.data.sym = $1;
+          $$->push_back(elem);
+      }
+    | NUM {
+          $$ = new std::vector<SymbolListElement>();
+          SymbolListElement elem;
+          elem.type = SYM_LIT;
+          elem.data.num = $1;
+          $$->push_back(elem);
+      }
+    ;
+%%
+
+void yyerror(std::vector<CodeComponent*>& components, const char *s) {
+    std::cout << "Parse error on line " << lineNum << ", after instruction " << components.size() << ": " << s << std::endl;
+}

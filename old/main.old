@@ -1,0 +1,61 @@
+#include <iostream>
+#include <cstdio>
+#include <vector>
+#include "symbol_table.hpp"
+#include "parser.hpp"
+#include "parser.tab.hpp"
+extern int yyparse();
+extern FILE* yyin;
+extern unsigned lineNum;
+extern void yylex_destroy();
+extern int yydebug;
+
+void initSymTable(){
+    SymbolTable::getInstance().addEntry("UNDEFINED");
+}
+
+
+int main(int argc, char** argv)
+{
+    if (argc != 2)
+    {
+        std::cerr << "Usage: " << argv[0] << " <input.s>" << std::endl;
+        return 1;
+    }
+
+    yyin = fopen(argv[1], "r");
+
+    if (!yyin)
+    {
+        perror("fopen");
+        return 1;
+    }
+    lineNum = 1;
+    std::vector<CodeComponent*> components;
+    int result = yyparse(components);
+
+    if (result == 0)
+    {
+        std::cout << "Parsing successful (" << components.size() << " lines)." << std::endl;
+    }
+    else
+    {
+        std::cout << "Parsing failed." << std::endl;
+    }
+
+    for (auto* c : components) {
+        std::cout<<std::endl;
+        c->process();
+        std::cout<<std::endl;
+        
+    }
+
+    for (auto* c : components) {
+        delete c;
+    }
+
+    fclose(yyin);
+    yylex_destroy();
+
+    return result;
+}

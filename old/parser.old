@@ -1,0 +1,186 @@
+%code requires {
+    #include <vector>
+    #include "./inc/parser.hpp"
+}
+
+
+%{
+    #include <cstdio>
+    #include <iostream>
+    #include "./inc/parser.hpp"
+
+    extern int yylex();
+    extern int yyparse();
+    extern void yylex_destroy();
+    extern FILE *yyin;
+    extern int lineNum;
+
+    void yyerror(std::vector<Line>& lines, const char* s);%}
+%union {
+    int reg;
+    int num;
+    char* sym;
+    char* label;
+    char* str;
+    std::vector<SymbolListElement>* symVec;
+    Operand operand;
+    Directive directive;
+    Instruction instruction;
+}
+%token PLUS
+%token DOLLAR
+%token LBRACKET
+%token RBRACKET
+%token COMMA
+%token COMMENT
+%token ENDL
+%token DIRECTIVE_GLOBAL
+%token DIRECTIVE_EXTERN
+%token DIRECTIVE_SECTION
+%token DIRECTIVE_WORD
+%token DIRECTIVE_SKIP
+%token DIRECTIVE_ASCII
+%token DIRECTIVE_END
+%token INSTRUCTION_HALT
+%token INSTRUCTION_INT
+%token INSTRUCTION_IRET
+%token INSTRUCTION_CALL
+%token INSTRUCTION_RET
+%token INSTRUCTION_JMP
+%token INSTRUCTION_BEQ
+%token INSTRUCTION_BNE
+%token INSTRUCTION_BGT
+%token INSTRUCTION_PUSH
+%token INSTRUCTION_POP
+%token INSTRUCTION_XCHG
+%token INSTRUCTION_ADD
+%token INSTRUCTION_SUB
+%token INSTRUCTION_MUL
+%token INSTRUCTION_DIV
+%token INSTRUCTION_NOT
+%token INSTRUCTION_AND
+%token INSTRUCTION_OR
+%token INSTRUCTION_XOR
+%token INSTRUCTION_SHL
+%token INSTRUCTION_SHR
+%token INSTRUCTION_LD
+%token INSTRUCTION_ST
+%token INSTRUCTION_CSRRD
+%token INSTRUCTION_CSRWR
+%token <reg> REG
+%token <reg> CSR
+%token <num> NUM
+%token <sym> SYM
+%token <str> STRING
+%token <label> LABEL
+%type <operand> operand_data
+%type <operand> operand_jmp
+%type <directive> directive
+%type <instruction> instruction
+%type <symVec> syms
+%parse-param {std::vector<Line>& lines}
+%%
+lines: lines line | line;
+line:
+      LABEL ENDL                                { Line l; l.type = L_NONE; l.label = $1; lines.push_back(l);                        }
+    | LABEL instruction ENDL                    { Line l; l.type = L_INS; l.label = $1; l.data.ins = $2; lines.push_back(l);        }
+    | LABEL directive ENDL                      { Line l; l.type = L_DIR; l.label = $1; l.data.dir = $2; lines.push_back(l);        }
+    | LABEL instruction COMMENT ENDL            { Line l; l.type = L_INS; l.label = $1; l.data.ins = $2; lines.push_back(l);        }
+    | LABEL directive COMMENT ENDL              { Line l; l.type = L_DIR; l.label = $1; l.data.dir = $2; lines.push_back(l);        }
+    | LABEL COMMENT ENDL                        { Line l; l.type = L_NONE; l.label = $1; lines.push_back(l);                        }
+    | instruction ENDL                          { Line l; l.type = L_INS; l.label = nullptr; l.data.ins = $1; lines.push_back(l);   }
+    | directive ENDL                            { Line l; l.type = L_DIR; l.label = nullptr; l.data.dir = $1; lines.push_back(l);   }
+    | instruction COMMENT ENDL                  { Line l; l.type = L_INS; l.label = nullptr; l.data.ins = $1; lines.push_back(l);   }
+    | directive COMMENT ENDL                    { Line l; l.type = L_DIR; l.label = nullptr; l.data.dir = $1; lines.push_back(l);   }
+    | COMMENT ENDL                              ;
+    | ENDL                                      ;
+    ;
+directive:
+      DIRECTIVE_GLOBAL syms                     { $$.type = DIR_GLOBAL; $$.syms = $2;                                   }
+    | DIRECTIVE_EXTERN syms                     { $$.type = DIR_EXTERN; $$.syms = $2;                                   }
+    | DIRECTIVE_SECTION SYM                     { $$.type = DIR_SECTION; $$.sym = $2;                                   }
+    | DIRECTIVE_WORD syms                       { $$.type = DIR_WORD; $$.syms = $2;                                     }
+    | DIRECTIVE_SKIP NUM                        { $$.type = DIR_SKIP; $$.num = $2;                                      }
+    | DIRECTIVE_ASCII STRING                    { $$.type = DIR_ASCII; $$.sym = $2;                                     }
+    | DIRECTIVE_END                             { $$.type = DIR_END;                                                    }
+    ;
+instruction:
+      INSTRUCTION_HALT                          { $$.type = INS_HALT;                                                                           }
+    | INSTRUCTION_INT                           { $$.type = INS_INT;                                                                            }
+    | INSTRUCTION_IRET                          { $$.type = INS_IRET;                                                                           }
+    | INSTRUCTION_CALL operand_jmp              { $$.type = INS_CALL;                            $$.operand = $2;                               }
+    | INSTRUCTION_RET                           { $$.type = INS_RET;                                                                             }
+    | INSTRUCTION_JMP operand_jmp               { $$.type = INS_JMP;                             $$.operand = $2;                               }
+    | INSTRUCTION_BEQ REG COMMA REG COMMA operand_jmp
+                                                { $$.type = INS_BEQ;    $$.regD = $2; $$.regS = $4; $$.operand = $6;                           }
+    | INSTRUCTION_BNE REG COMMA REG COMMA operand_jmp
+                                                { $$.type = INS_BNE;    $$.regD = $2; $$.regS = $4; $$.operand = $6;                           }
+    | INSTRUCTION_BGT REG COMMA REG COMMA operand_jmp
+                                                { $$.type = INS_BGT;    $$.regD = $2; $$.regS = $4; $$.operand = $6;                           }
+    | INSTRUCTION_PUSH REG                      { $$.type = INS_PUSH;                           $$.regD = $2;                                  }
+    | INSTRUCTION_POP REG                       { $$.type = INS_POP;                            $$.regD = $2;                                  }
+    | INSTRUCTION_XCHG REG COMMA REG            { $$.type = INS_XCHG;   $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_ADD REG COMMA REG             { $$.type = INS_ADD;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_SUB REG COMMA REG             { $$.type = INS_SUB;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_MUL REG COMMA REG             { $$.type = INS_MUL;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_DIV REG COMMA REG             { $$.type = INS_DIV;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_NOT REG                       { $$.type = INS_NOT;                            $$.regD = $2;                                  }
+    | INSTRUCTION_AND REG COMMA REG             { $$.type = INS_AND;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_OR REG COMMA REG              { $$.type = INS_OR;     $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_XOR REG COMMA REG             { $$.type = INS_XOR;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_SHL REG COMMA REG             { $$.type = INS_SHL;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_SHR REG COMMA REG             { $$.type = INS_SHR;    $$.regD = $2; $$.regS = $4;                                             }
+    | INSTRUCTION_LD operand_data COMMA REG     { $$.type = INS_LD;     $$.operand = $2; $$.regD = $4;                                         }
+    | INSTRUCTION_ST REG COMMA operand_data     { $$.type = INS_ST;     $$.regD = $2; $$.operand = $4;                                         }
+    | INSTRUCTION_CSRRD CSR COMMA REG           { $$.type = INS_CSRRD;  $$.regD = $4; $$.operand.type = OP_REGDIR; $$.operand.reg = $2;         }
+    | INSTRUCTION_CSRWR REG COMMA CSR           { $$.type = INS_CSRWR;  $$.regD = $2; $$.operand.type = OP_REGDIR; $$.operand.reg = $4;         }
+    ;
+operand_data:
+      DOLLAR NUM                            { $$.type = OP_IMMED; $$.num = $2; $$.sym = nullptr;                    }
+    | DOLLAR SYM                            { $$.type = OP_IMMED; $$.sym = $2;                                      }
+    | NUM                                   { $$.type = OP_MEM; $$.num = $1; $$.sym = nullptr;                      }
+    | SYM                                   { $$.type = OP_MEM; $$.sym = $1;                                        }
+    | REG                                   { $$.type = OP_REGDIR; $$.reg = $1;                                     }
+    | LBRACKET REG RBRACKET                 { $$.type = OP_REGIND; $$.reg = $2;                                     }
+    | LBRACKET REG PLUS NUM RBRACKET        { $$.type = OP_REGINDPOM; $$.reg = $2; $$.num = $4; $$.sym = nullptr;   }
+    | LBRACKET REG PLUS SYM RBRACKET        { $$.type = OP_REGINDPOM; $$.reg = $2; $$.sym = $4;                     }
+    ;
+operand_jmp:
+      NUM                                   { $$.type = OP_IMMED; $$.num = $1; $$.sym = nullptr;                    }
+    | SYM                                   { $$.type = OP_IMMED; $$.sym = $1;                                      }
+    ;
+syms:
+      syms COMMA SYM {
+          SymbolListElement elem;
+          elem.type = SYM_SYM;
+          elem.data.sym = $3;
+          $$ = $1;
+          $$->push_back(elem);
+      }
+    | syms COMMA NUM {
+          SymbolListElement elem;
+          elem.type = SYM_LIT;
+          elem.data.num = $3;
+          $$ = $1;
+          $$->push_back(elem);
+      }
+    | SYM {
+          $$ = new std::vector<SymbolListElement>();
+          SymbolListElement elem;
+          elem.type = SYM_SYM;
+          elem.data.sym = $1;
+          $$->push_back(elem);
+      }
+    | NUM {
+          $$ = new std::vector<SymbolListElement>();
+          SymbolListElement elem;
+          elem.type = SYM_LIT;
+          elem.data.num = $1;
+          $$->push_back(elem);
+      }
+    ;
+%%
+
+void yyerror(std::vector<Line>& lines, const char *s) {
+    std::cout << "Parse error on line " << lineNum << ", after instruction " << lines.size() << ": " << s << std::endl;
+}
