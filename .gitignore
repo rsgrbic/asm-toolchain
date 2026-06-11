@@ -1,1 +1,5 @@
 parser.tab.cpp parser.tab.hpp 
+*.o
+assembler
+linker
+emulator

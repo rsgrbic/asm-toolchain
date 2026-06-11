@@ -153,13 +153,14 @@ static void addLabel(char* label){
         entry = sym.getEntry(label);
         entry->isDefined = true;
         entry->sectionNdx = asmbl.getCurrentSectionIndex();
-        entry->offset = asmbl.getCurrentSection()->getLocationCounter();
+        entry->offset = asmbl.getCurrentSection()->getLocationCounter();\
     } else if (entry->isDefined) {
         std::cerr << "Error: label '" << label << "' already defined.\n";
     } else {
         entry->isDefined = true;
         entry->sectionNdx = asmbl.getCurrentSectionIndex();
         entry->offset = asmbl.getCurrentSection()->getLocationCounter();
+        resolveForwardRefs(entry);
     }
 }
 

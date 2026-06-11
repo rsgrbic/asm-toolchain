@@ -4,7 +4,10 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <fstream>
 #include <unordered_map>
+#include <relocation_table.hpp>
+
 
 // --- 4-bit hardware opcodes (bits 31:28 of instruction word) ---
 enum Opcode {
@@ -75,21 +78,35 @@ class Section {
     std::string name;
     int ndx;
     int locationCounter;
+    RelocationTable relocTable;
     std::unordered_map<int, std::vector<int>> literalPool;
+    std::unordered_map<std::string, std::vector<int>> symbolPool;
+
     std::vector<uint8_t> content;
 public:
     Section(const std::string& name, int ndx);
 
+    void printToOutput(std::ofstream& out);
+    RelocationTable& getRelocationTable(){return relocTable;}
+
     void addByte(int8_t byte);
     void addQuadbyte(int32_t quad);
+
+    void addQuadbyteAtOffset(int32_t value, uint32_t offset);
     std::string getName() const { return name; }
     int getNdx() const { return ndx; }
     int getLocationCounter() const { return locationCounter; }
     std::vector<uint8_t>& getContent() { return content; }
-
+    //pool
     void addLiteralToPool(int literal);
     void changeDisplacementInInstruction(int32_t disp, uint32_t newDisp);
     std::unordered_map<int, std::vector<int>>& getLiteralPool();
+
+    //symbols
+    void addSymbolToPool(const std::string& name) {
+    symbolPool[name].push_back(locationCounter);
+}
+std::unordered_map<std::string, std::vector<int>>& getsymbolPool() { return symbolPool; }
 
     void addInstruction(uint32_t ins);
     void formInstruction(Opcode opcode, uint8_t mod, uint8_t regA, uint8_t regB, uint8_t regC, int16_t disp);

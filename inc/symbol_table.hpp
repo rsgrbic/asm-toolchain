@@ -4,6 +4,15 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <fstream>
+
+
+struct ForwardRef {
+    int sectionNdx;
+    int patchOffset;  // byte offset within section content
+    bool isWord;      // true for .word references
+    ForwardRef* next;
+};
 
 struct SymbolTableEntry {
     int index;
@@ -14,8 +23,10 @@ struct SymbolTableEntry {
     bool absolute;
     bool isDefined;
     bool isExtern;
-    bool isSection;
+    ForwardRef * forwardRefHead=nullptr;
 };
+
+
 
 class SymbolTable {
 public:
@@ -24,7 +35,7 @@ public:
         return instance;
     }
 
-    
+    void addForwardReference(const std::string& symbol, int patchOffset, int sectionNdx, bool isWord);
 
     int addEntry(const std::string& name) {
         SymbolTableEntry* entry = new SymbolTableEntry();
@@ -47,11 +58,12 @@ public:
     }
 
     std::vector<SymbolTableEntry*>& getTable() { return table; }
-
+    void printToOutput(std::ofstream& out);
 private:
     SymbolTable() = default;
     SymbolTable(const SymbolTable&) = delete;
     void operator=(const SymbolTable&) = delete;
+
 
     std::vector<SymbolTableEntry*> table;
     std::unordered_map<std::string, SymbolTableEntry*> tableMap;

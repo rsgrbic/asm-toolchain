@@ -70,9 +70,9 @@ csrwr                               { return INSTRUCTION_CSRWR; }
 %r([0-9]|1[0-5])                     { yylval.reg = atoi(yytext + 2); return REG; }
 %sp                                  { yylval.reg = 14; return REG; }
 %pc                                  { yylval.reg = 15; return REG; }
-%status                              { yylval.reg = 20; return CSR; }
-%handler                             { yylval.reg = 21; return CSR; }
-%cause                               { yylval.reg = 22; return CSR; }
+%status                              { yylval.reg = 0; return CSR; }
+%handler                             { yylval.reg = 1; return CSR; }
+%cause                               { yylval.reg = 2; return CSR; }
 0                                   { yylval.num = 0; return NUM; }
 [1-9][0-9]*                         { yylval.num = atoi(yytext); return NUM; }
 0[0-7]+                             { yylval.num = strtol(yytext + 1, NULL, 8); return NUM; }

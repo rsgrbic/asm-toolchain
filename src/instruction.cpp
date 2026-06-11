@@ -44,7 +44,7 @@ void Instruction::intHandler()   { sec()->formInstruction(INT,  0, 0, 0, 0, 0); 
 
 void Instruction::iretHandler() {
     sec()->formInstruction(LOAD, LOAD_POP_MOD, PC, SP, 0, 4);
-    sec()->formInstruction(LOAD, LOAD_POP_MOD, 20, SP, 0, 4);// 20 scause
+    sec()->formInstruction(LOAD, LOAD_CSRPOP_MOD, 0, SP, 0, 4);// 0 status
 }
 
 void Instruction::retHandler()   { sec()->formInstruction(LOAD, LOAD_POP_MOD, PC, SP, 0, 4); }
@@ -54,15 +54,39 @@ void Instruction::retHandler()   { sec()->formInstruction(LOAD, LOAD_POP_MOD, PC
 void Instruction::callHandler() {
     if (operand.sym == nullptr)
         sec()->formInstructionWithLiteral(CALL, CALL_REG_MOD, PC, 0, 0, operand.num);
-    else
-        ; // TODO: symbol relocation — formInstructionWithSymbol(CALL, CALL_REG_MOD, PC, 0, 0, operand.sym);
+    else{ 
+       SymbolTable& sym= SymbolTable::getInstance();
+       SymbolTableEntry* e = sym.getEntry(operand.sym);
+       if(!e){
+        sym.addEntry(operand.sym);
+        e=sym.getEntry(operand.sym);
+       }
+       if (e->isDefined){
+        sec()->addSymbolToPool(operand.sym);
+    }
+    else{
+        //forward ref
+        sym.addForwardReference(operand.sym,sec()->getLocationCounter(),sec()->getNdx(),false);
+    }
+    sec()->formInstruction(CALL,CALL_MEM_MOD,PC,0,0,0);
+    }
 }
-
 void Instruction::jmpHandler() {
     if (operand.sym == nullptr)
         sec()->formInstructionWithLiteral(JMP, JMP_REG_MOD, PC, 0, 0, operand.num);
     else
-        ; // TODO: symbol
+    {
+        SymbolTable& sym = SymbolTable::getInstance();
+        SymbolTableEntry* e = sym.getEntry(operand.sym);
+        if (!e) { sym.addEntry(operand.sym); e = sym.getEntry(operand.sym); }
+        if (e->isDefined) {
+            sec()->addSymbolToPool(operand.sym);
+        } else {
+            sym.addForwardReference(operand.sym,
+                sec()->getLocationCounter(), sec()->getNdx(), false);
+        }
+        sec()->formInstruction(JMP, JMP_MEM_MOD, PC, 0, 0, 0);
+    }
         
 }
 
@@ -70,7 +94,18 @@ void Instruction::beqHandler() {
     if (operand.sym == nullptr)
         sec()->formInstructionWithLiteral(JMP, JMP_BEQ_MOD, PC, regD, regS, operand.num);
     else
-        ; // TODO: symbol
+        {
+        SymbolTable& sym = SymbolTable::getInstance();
+        SymbolTableEntry* e = sym.getEntry(operand.sym);
+        if (!e) { sym.addEntry(operand.sym); e = sym.getEntry(operand.sym); }
+        if (e->isDefined) {
+            sec()->addSymbolToPool(operand.sym);
+        } else {
+            sym.addForwardReference(operand.sym,
+                sec()->getLocationCounter(), sec()->getNdx(), false);
+        }
+        sec()->formInstruction(JMP, JMP_BEQ_MOD | JMP_MEM_MOD, PC, regD, regS, 0);
+        }
 }
 
 
@@ -78,14 +113,36 @@ void Instruction::bneHandler() {
     if (operand.sym == nullptr)
         sec()->formInstructionWithLiteral(JMP, JMP_BNE_MOD, PC, regD, regS, operand.num);
     else
-        ; // TODO: symbol
+        {
+        SymbolTable& sym = SymbolTable::getInstance();
+        SymbolTableEntry* e = sym.getEntry(operand.sym);
+        if (!e) { sym.addEntry(operand.sym); e = sym.getEntry(operand.sym); }
+        if (e->isDefined) {
+            sec()->addSymbolToPool(operand.sym);
+        } else {
+            sym.addForwardReference(operand.sym,
+                sec()->getLocationCounter(), sec()->getNdx(), false);
+        }
+        sec()->formInstruction(JMP, JMP_BNE_MOD | JMP_MEM_MOD, PC, regD, regS, 0);
+    }
 }
 
 void Instruction::bgtHandler() {
     if (operand.sym == nullptr)
         sec()->formInstructionWithLiteral(JMP, JMP_BGT_MOD, PC, regD, regS, operand.num);
     else
-        ; // TODO: symbol
+        {
+        SymbolTable& sym = SymbolTable::getInstance();
+        SymbolTableEntry* e = sym.getEntry(operand.sym);
+        if (!e) { sym.addEntry(operand.sym); e = sym.getEntry(operand.sym); }
+        if (e->isDefined) {
+            sec()->addSymbolToPool(operand.sym);
+        } else {
+            sym.addForwardReference(operand.sym,
+                sec()->getLocationCounter(), sec()->getNdx(), false);
+        }
+        sec()->formInstruction(JMP, JMP_BGT_MOD | JMP_MEM_MOD, PC, regD, regS, 0);
+    }
 }
 
 //Stack ops
@@ -116,7 +173,7 @@ void Instruction::shlHandler() { sec()->formInstruction(SHIFT, SHIFT_SHL_MOD, re
 void Instruction::shrHandler() { sec()->formInstruction(SHIFT, SHIFT_SHR_MOD, regD, regD, regS, 0); }
 
 void Instruction::csrrdHandler() {
-    // regD = gpr dest, operand.reg = csr index (status=20, handler=21, cause=22)
+    // regD = gpr dest, operand.reg = csr index (status=0, handler=1, cause=2)
     sec()->formInstruction(LOAD, LOAD_CSRRD_MOD, regD, operand.reg, 0, 0);
 }
 
@@ -132,18 +189,29 @@ void Instruction::ldHandler() {
 
         case OP_IMMED:
             if (operand.sym == nullptr) {
-              // ld $literal, %regD   →   regD <= PC + literal
+              // ld $literal, %regD   →   regD <= literal
                 int literal= operand.num;
 				if (Assembler::valueWithin12BitRange(literal)){
 					sec()->formInstruction(LOAD,LOAD_REGDIR_MOD,regD,0,0,static_cast<int16_t>(literal));
 				}
 				else{
 					// regD <= mem32[PC+pool_offset]
+                    sec()->addLiteralToPool(literal);
 					sec()->formInstruction(LOAD,LOAD_REGIND_MOD,regD,PC,0,0);
 				}
               } else {
-                // ld $symbol, %regD    →   regD <= PC + symbol
-                // TODO: symbol relocation — formInstructionWithSymbol(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, operand.sym);
+                // ld $symbol, %regD    →   regD <= adr/val symbol
+                SymbolTableEntry *e = sym.getEntry(operand.sym);
+                if (!e){
+                    sym.addEntry(operand.sym);e=sym.getEntry(operand.sym);
+                }
+                if(e->isDefined){
+                sec()->addSymbolToPool(operand.sym);
+                }
+                else{
+                    sym.addForwardReference(operand.sym,sec()->getLocationCounter(),sec()->getNdx(),false);
+                }
+                sec()->formInstruction(LOAD,LOAD_REGIND_MOD,regD,PC,0,0);
             }
             break;
 
@@ -155,14 +223,16 @@ void Instruction::ldHandler() {
                     sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, 0, 0, static_cast<int16_t>(addr));
                 } else {
 					sec()->addLiteralToPool(addr);
-                    sec()->formInstruction(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, addr);
+                    sec()->formInstruction(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, 0);
                     sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, regD, 0, 0);
                 }
             } else {
                 // ld symbol, %regD    →   regD <= mem32[symbol]
-                // TODO: symbol — load addr then indirect
-                // formInstructionWithSymbol(LOAD, LOAD_REGDIR_MOD, regD, PC, 0, operand.sym);
-                // formInstruction(LOAD, LOAD_REGIND_MOD, regD, regD, 0, 0);
+                SymbolTableEntry* e = sym.getEntry(operand.sym);
+                if (!e) { sym.addEntry(operand.sym); e = sym.getEntry(operand.sym); }
+                sec()->addSymbolToPool(operand.sym);
+                sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, PC, 0, 0);
+                sec()->formInstruction(LOAD, LOAD_REGIND_MOD, regD, regD, 0, 0);
             }
             break;
 
@@ -194,6 +264,7 @@ void Instruction::ldHandler() {
 
 void Instruction::stHandler() {
     Section* s = sec();
+    SymbolTable& sym = SymbolTable::getInstance();
 
     switch (operand.type) {
 
@@ -213,7 +284,18 @@ void Instruction::stHandler() {
                     s->formInstruction(STORE, STORE_MEMIND_MOD, PC, 0, regS, 0);
                 }
             }
+            else{
             // else: st %regS, symbol  →  TODO: symbol relocation
+                SymbolTableEntry* e = sym.getEntry(operand.sym);
+                if(!e){sym.addEntry(operand.sym);e=sym.getEntry(operand.sym);}
+                if(e->isDefined){
+                    sec()->addSymbolToPool(operand.sym);
+                }
+                else{
+                    sym.addForwardReference(operand.sym,sec()->getLocationCounter(),sec()->getNdx(),false);
+                }
+                s->formInstruction(STORE,STORE_MEMIND_MOD,PC,0,regS,0);
+             }
             break;
 
         case OP_REGIND:

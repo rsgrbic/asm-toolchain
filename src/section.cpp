@@ -1,7 +1,28 @@
 #include "section.hpp"
 #include "assembler.hpp"
+#include <iomanip>
 Section::Section(const std::string& name, int ndx)
     : name(name), ndx(ndx), locationCounter(0) {}
+
+void Section::printToOutput(std::ofstream &out)
+{
+    out << "SECTION " << name << " " << ndx << " " << locationCounter << "\n";
+    int count = 0;
+    for (uint8_t byte : content) {
+        out << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
+            << static_cast<int>(byte) << " ";
+        count++;
+        if (count == 8) {
+            out << "\n";
+            count = 0;
+        }
+    }
+    if (count != 0) {
+        out << "\n";
+    }
+    out << std::dec << "END_SECTION\n";
+    relocTable.printToOutput(out);
+}
 
 void Section::addByte(int8_t byte) {
     content.push_back(byte);
@@ -12,6 +33,13 @@ void Section::addQuadbyte(int32_t quad) {
     for (int i = 0; i < 4; i++)
         content.push_back((quad >> (i * 8)) & 0xFF);
     locationCounter += 4;
+}
+
+void Section::addQuadbyteAtOffset(int32_t value, uint32_t offset) {
+    content[offset]     = value & 0xFF;
+    content[offset + 1] = (value >> 8) & 0xFF;
+    content[offset + 2] = (value >> 16) & 0xFF;
+    content[offset + 3] = (value >> 24) & 0xFF;
 }
 
 void Section::addLiteralToPool(int literal) {

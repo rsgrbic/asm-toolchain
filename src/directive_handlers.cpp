@@ -20,18 +20,21 @@ void Directive::process() {
 
 int Directive::globalHandler() {
     SymbolTable &sym = SymbolTable::getInstance();
-    if (!syms) return 0;
+    if (!syms) {std::cerr <<"Global directive with no symbols";return 0;}
     for (auto& elem : *syms) {
         if (elem.type != SYM_SYM) continue; //SIlent fallback
+        if (findSectionByName(elem.data.sym) != nullptr) {
+            std::cerr << "Error: section '" << elem.data.sym
+                      << "' can't be global.\n";
+            return -1;
+        }
         SymbolTableEntry* entry = sym.getEntry(elem.data.sym);
         if (entry == nullptr) {
             int idx = sym.addEntry(elem.data.sym);
             entry = sym.getEntry(elem.data.sym);
             entry->global = true;
-        } else if (entry->isSection) {
-            std::cerr << "Error: section " << elem.data.sym << " can't be global." << std::endl;
-            return -1;
-        } else {
+        }
+         else {
             entry->global = true;
         }
     }
@@ -43,6 +46,11 @@ int Directive::externHandler() {
     if (!syms) return 0;
     for (auto& elem : *syms) {
         if (elem.type != SYM_SYM) continue;// fallback
+        if (findSectionByName(elem.data.sym) != nullptr) {
+            std::cerr << "Error: section '" << elem.data.sym
+                      << "' can't be extern.\n";
+            return -1;
+        }
         SymbolTableEntry* entry = sym.getEntry(elem.data.sym);
         if (entry == nullptr) {
             int idx = sym.addEntry(elem.data.sym);
@@ -54,7 +62,7 @@ int Directive::externHandler() {
             entry->isExtern = true;
             entry->isDefined = true;
             entry->sectionNdx = 0;
-            // TODO: backpatch forward references to this symbol
+            resolveForwardRefs(entry);
         } else {
             std::cerr << "Error: symbol " << elem.data.sym << " already defined." << std::endl;
             return -1;
@@ -66,22 +74,25 @@ int Directive::externHandler() {
 int Directive::wordHandler() {
     SymbolTable& sym = SymbolTable::getInstance();
     Assembler& asmbl = Assembler::getInstance();
-    if (!syms) return 0;
+    Section* sec = asmbl.getCurrentSection();
+
     for (auto& elem : *syms) {
         if (elem.type == SYM_LIT) {
-            asmbl.getCurrentSection()->addQuadbyte(elem.data.num);
+            sec->addQuadbyte(elem.data.num);
         } else {
             SymbolTableEntry* entry = sym.getEntry(elem.data.sym);
-            if (entry == nullptr) {
-                int idx = sym.addEntry(elem.data.sym);
+            if (!entry) {
+                sym.addEntry(elem.data.sym);
                 entry = sym.getEntry(elem.data.sym);
             }
             if (!entry->isDefined) {
-                // TODO: forward reference — add placeholder + forward ref node
-                asmbl.getCurrentSection()->addQuadbyte(0);
+                // Forward reference: record patch location, emit 0 placeholder
+                sym.addForwardReference(entry->name, sec->getLocationCounter(), sec->getNdx(), true);
+                sec->addQuadbyte(0);
             } else {
-                // TODO: add relocation entry + symbol value
-                asmbl.getCurrentSection()->addQuadbyte(entry->offset);
+                // Already defined: emit value + relocation
+                sec->getRelocationTable().addEntry(sec->getNdx(), sec->getLocationCounter(), entry->index);
+                sec->addQuadbyte(entry->offset);
             }
         }
     }
@@ -112,25 +123,20 @@ int Directive::sectionHandler() {
     SymbolTable& sym = SymbolTable::getInstance();
     Assembler& asmbl = Assembler::getInstance();
 
-    SymbolTableEntry* entry = sym.getEntry(stringValue);
-    if (entry == nullptr) {
-        int idx = sym.addEntry(stringValue);
-        entry = sym.getEntry(stringValue);
-        entry->isSection = true;
-        entry->isDefined = true;
-        entry->offset = 0;
-        entry->sectionNdx = asmbl.addNewSection(stringValue);
-        asmbl.setCurrentSection(entry->sectionNdx);
-    } else if (entry->isDefined) {
-        std::cerr << "Error: section " << stringValue << " already defined." << std::endl;
-        return -1;
-    } else {
-        entry->isSection = true;
-        entry->isDefined = true;
-        entry->offset = 0;
-        entry->sectionNdx = asmbl.addNewSection(stringValue);
-        asmbl.setCurrentSection(entry->sectionNdx);
-        // TODO: backpatch forward references
+    if (findSectionByName(stringValue) != nullptr) {
+            std::cerr << "Error: section '" << stringValue
+                      << "' can't be extern.\n";
+            return -1;
     }
+
+    SymbolTableEntry* entry = sym.getEntry(stringValue);
+     if (entry != nullptr && entry->isDefined) {
+        std::cerr << "Error: name '" << stringValue
+                  << "' already used as a symbol.\n";
+        return -1;
+    }
+
+    int ndx = asmbl.addNewSection(stringValue);
+    asmbl.setCurrentSection(ndx);
     return 0;
 }

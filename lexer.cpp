@@ -1127,17 +1127,17 @@ YY_RULE_SETUP
 case 45:
 YY_RULE_SETUP
 #line 73 "./misc/lexer.l"
-{ yylval.reg = 20; return CSR; }
+{ yylval.reg = 0; return CSR; }
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
 #line 74 "./misc/lexer.l"
-{ yylval.reg = 21; return CSR; }
+{ yylval.reg = 1; return CSR; }
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
 #line 75 "./misc/lexer.l"
-{ yylval.reg = 22; return CSR; }
+{ yylval.reg = 2; return CSR; }
 	YY_BREAK
 case 48:
 YY_RULE_SETUP

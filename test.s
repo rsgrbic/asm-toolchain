@@ -1,9 +1,9 @@
 # file: main.s
 
-.global sd;
+.global handler, my_start, my_counter
 
 .section my_code
-my_start: # komentar:
+my_start:
     ld $0xFFFFFEFE, %sp
     ld $handler, %r1
     csrwr %r1, %handler
@@ -18,6 +18,6 @@ wait:
 
 .section my_data
 my_counter:
-.word abc
+.word 0
 
 .end
